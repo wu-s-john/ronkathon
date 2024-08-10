@@ -21,7 +21,6 @@
 #![feature(const_option)]
 #![feature(generic_const_exprs)]
 #![feature(specialization)]
-#![warn(missing_docs)]
 
 pub mod algebra;
 pub mod codes;
