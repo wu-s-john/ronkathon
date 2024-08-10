@@ -3,12 +3,11 @@ use std::hash::Hash;
 use std::ops::{Add, Mul};
 
 use crate::algebra::field::FiniteField;
-
+use super::*;
 use super::{Monomial, Polynomial};
 
 use std::hash::Hasher;
 
-type Hi = BTreeMap<usize, usize>;
 #[derive(PartialEq, Eq)]
 struct SortedBTreeMap<K: Ord, V>(BTreeMap<K, V>);
 
@@ -40,7 +39,11 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
         }
     }
 
-    pub fn evaluate(&self, points: &HashMap<usize, F>) -> F {
+    pub fn coefficient(&self, exponents: &BTreeMap<usize, usize>) -> Option<&F> {
+        self.terms.get(exponents)
+    }
+
+    pub fn evaluate(&self, points: &BTreeMap<usize, F>) -> F {
         self.terms.iter().map(|(exponents, coeff)| {
             let term_value = exponents.iter().map(|(&var, &exp)| {
                 points.get(&var).unwrap_or(&F::ONE).pow(exp)
@@ -91,6 +94,42 @@ impl<F: FiniteField> Mul for MultivariatePolynomial<F> {
             }
         }
         result
+    }
+}
+
+impl<F: FiniteField + Display> Display for MultivariatePolynomial<F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for (exponents, coeff) in &self.terms {
+            if !first {
+                write!(f, " + ")?;
+            }
+            first = false;
+
+            if *coeff != F::ONE || exponents.is_empty() {
+                write!(f, "{}", coeff)?;
+            }
+
+            let mut first_var = true;
+            for (&var, &exp) in exponents {
+                if exp > 0 {
+                    if !first_var || *coeff != F::ONE {
+                        write!(f, "*")?;
+                    }
+                    write!(f, "x_{}", var)?;
+                    if exp > 1 {
+                        write!(f, "^{}", exp)?;
+                    }
+                    first_var = false;
+                }
+            }
+        }
+
+        if first {
+            write!(f, "0")?;
+        }
+
+        Ok(())
     }
 }
 

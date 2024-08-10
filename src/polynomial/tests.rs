@@ -1,3 +1,7 @@
+use std::collections::{BTreeMap, HashMap};
+
+use crate::polynomial::multivariate_polynomial::MultivariatePolynomial;
+
 use super::*;
 
 #[fixture]
@@ -125,4 +129,78 @@ fn dft(poly: Polynomial<Monomial, PlutoBaseField, 4>) {
   // let poly =
   //   Polynomial::<Monomial, PlutoBaseField>::new(vec![PlutoBaseField::ZERO,
   // PlutoBaseField::ZERO]); assert_eq!(poly.coefficients, [PlutoBaseField::ZERO]);
+}
+
+
+#[test]
+fn test_multivariate_polynomial_creation() {
+    let mut poly = MultivariatePolynomial::<PlutoBaseField>::new();
+    poly.insert_term(BTreeMap::from([(0, 2), (1, 1)]), PlutoBaseField::new(3)); // 3x_0^2*x_1
+    poly.insert_term(BTreeMap::from([(0, 1)]), PlutoBaseField::new(2)); // 2x_0
+    poly.insert_term(BTreeMap::new(), PlutoBaseField::new(1)); // 1
+
+    assert_eq!(poly.degree(), 3);
+    assert_eq!(poly.variables(), vec![0, 1]);
+}
+
+#[test]
+fn test_multivariate_polynomial_addition() {
+    let mut poly1 = MultivariatePolynomial::<PlutoBaseField>::new();
+    poly1.insert_term(BTreeMap::from([(0, 2)]), PlutoBaseField::new(1)); // x_0^2
+    poly1.insert_term(BTreeMap::from([(1, 1)]), PlutoBaseField::new(2)); // 2x_1
+
+    let mut poly2 = MultivariatePolynomial::<PlutoBaseField>::new();
+    poly2.insert_term(BTreeMap::from([(0, 2)]), PlutoBaseField::new(3)); // 3x_0^2
+    poly2.insert_term(BTreeMap::from([(2, 1)]), PlutoBaseField::new(4)); // 4x_2
+
+    let result = poly1 + poly2;
+
+    assert_eq!(result.coefficient(&BTreeMap::from([(0, 2)])), Some(&PlutoBaseField::new(4))); // 4x_0^2
+    assert_eq!(result.coefficient(&BTreeMap::from([(1, 1)])), Some(&PlutoBaseField::new(2))); // 2x_1
+    assert_eq!(result.coefficient(&BTreeMap::from([(2, 1)])), Some(&PlutoBaseField::new(4))); // 4x_2
+}
+
+#[test]
+fn test_multivariate_polynomial_multiplication() {
+    let mut poly1 = MultivariatePolynomial::<PlutoBaseField>::new();
+    poly1.insert_term(BTreeMap::from([(0, 1)]), PlutoBaseField::new(2)); // 2x_0
+    poly1.insert_term(BTreeMap::new(), PlutoBaseField::new(1)); // 1
+
+    let mut poly2 = MultivariatePolynomial::<PlutoBaseField>::new();
+    poly2.insert_term(BTreeMap::from([(1, 1)]), PlutoBaseField::new(3)); // 3x_1
+    poly2.insert_term(BTreeMap::new(), PlutoBaseField::new(1)); // 1
+
+    let result = poly1 * poly2;
+
+    assert_eq!(result.coefficient(&BTreeMap::from([(0, 1), (1, 1)])), Some(&PlutoBaseField::new(6))); // 6x_0*x_1
+    assert_eq!(result.coefficient(&BTreeMap::from([(0, 1)])), Some(&PlutoBaseField::new(2))); // 2x_0
+    assert_eq!(result.coefficient(&BTreeMap::from([(1, 1)])), Some(&PlutoBaseField::new(3))); // 3x_1
+    assert_eq!(result.coefficient(&BTreeMap::new()), Some(&PlutoBaseField::new(1))); // 1
+}
+
+#[test]
+fn test_multivariate_polynomial_evaluation() {
+    let mut poly = MultivariatePolynomial::<PlutoBaseField>::new();
+    poly.insert_term(BTreeMap::from([(0, 2), (1, 1)]), PlutoBaseField::new(3)); // 3x_0^2*x_1
+    poly.insert_term(BTreeMap::from([(0, 1)]), PlutoBaseField::new(2)); // 2x_0
+    poly.insert_term(BTreeMap::new(), PlutoBaseField::new(1)); // 1
+
+    let points = BTreeMap::from([
+        (0, PlutoBaseField::new(2)),
+        (1, PlutoBaseField::new(3)),
+    ]);
+
+    let result = poly.evaluate(&points);
+    // 3*(2^2)*(3) + 2*(2) + 1 = 3*4*3 + 4 + 1 = 36 + 4 + 1 = 41
+    assert_eq!(result, PlutoBaseField::new(41));
+}
+
+#[test]
+fn test_multivariate_polynomial_display() {
+    let mut poly = MultivariatePolynomial::<PlutoBaseField>::new();
+    poly.insert_term(BTreeMap::from([(0, 2), (1, 1)]), PlutoBaseField::new(3)); // 3x_0^2*x_1
+    poly.insert_term(BTreeMap::from([(0, 1)]), PlutoBaseField::new(2)); // 2x_0
+    poly.insert_term(BTreeMap::new(), PlutoBaseField::new(1)); // 1
+
+    assert_eq!(poly.to_string(), "3*x_0^2*x_1 + 2*x_0 + 1");
 }
