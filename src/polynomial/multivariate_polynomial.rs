@@ -52,6 +52,29 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
         }).sum()
     }
 
+    pub fn apply_variables(&self, variables: &[(usize, F)]) -> Self {
+        let mut result = MultivariatePolynomial::new();
+        
+        for (exponents, coeff) in &self.terms {
+            let mut new_exponents = exponents.clone();
+            let mut new_coeff = *coeff;
+            
+            for &(var, value) in variables {
+                if let Some(exp) = new_exponents.get(&var) {
+                    new_coeff *= value.pow(*exp);
+                    new_exponents.remove(&var);
+                }
+            }
+            
+            if !new_exponents.is_empty() {
+                result.insert_term(new_exponents, new_coeff);
+            } else {
+                result.insert_term(BTreeMap::new(), new_coeff);
+            }
+        }
+        
+        result
+    }
     pub fn degree(&self) -> usize {
         self.terms.keys()
             .map(|exponents| exponents.values().sum::<usize>())
