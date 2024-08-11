@@ -24,6 +24,8 @@ use crate::algebra::field::FiniteField;
 
 pub mod arithmetic;
 pub mod multivariate_polynomial;
+pub mod sumcheck;
+pub mod boolean_array;
 #[cfg(test)] mod tests;
 
 // https://people.inf.ethz.ch/gander/papers/changing.pdf

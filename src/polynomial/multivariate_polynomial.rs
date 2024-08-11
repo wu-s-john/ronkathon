@@ -24,10 +24,21 @@ pub struct MultivariatePolynomial<F: FiniteField> {
     terms: HashMap<BTreeMap<usize, usize>, F>,
 }
 
+impl<F: FiniteField + Clone> Clone for MultivariatePolynomial<F> {
+    fn clone(&self) -> Self {
+        MultivariatePolynomial {
+            terms: self.terms.clone(),
+        }
+    }
+}
+
+
 impl<F: FiniteField> MultivariatePolynomial<F> {
     pub fn new() -> Self {
         Self { terms: HashMap::new() }
     }
+
+    
 
     pub fn insert_term(&mut self, exponents: BTreeMap<usize, usize>, coefficient: F) {
         if coefficient != F::ZERO {
