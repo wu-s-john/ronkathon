@@ -1,10 +1,12 @@
-use std::hash::Hasher;
+use std::{fmt::Display, hash::{Hash, Hasher}};
 
-use rand::SeedableRng;
-use crate::random::Random;
+use rand::{Rng, SeedableRng};
+use crate::{algebra::field::FiniteField, polynomial::{multivariate_polynomial::MultivariatePolynomial, to_bytes::ToBytes}, random::{Random, RandomOracle}};
 
-use self::{boolean_array::get_all_possible_boolean_values, random::RandomOracle, to_bytes::ToBytes};
-use super::{multivariate_polynomial::MultivariatePolynomial, *};
+pub mod boolean_array;
+#[cfg(test)] mod tests;
+
+use self::boolean_array::get_all_possible_boolean_values;
 
 pub struct SumcheckProof<F: FiniteField> {
   // Define the structure of your proof here

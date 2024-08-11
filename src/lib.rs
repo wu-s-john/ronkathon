@@ -33,6 +33,7 @@ pub mod kzg;
 pub mod polynomial;
 pub mod tree;
 pub mod random;
+pub mod sumcheck;
 
 use core::{
   fmt::{self, Display, Formatter},
