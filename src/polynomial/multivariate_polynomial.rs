@@ -20,6 +20,29 @@ impl<K: Ord + Hash, V: Hash> Hash for SortedBTreeMap<K, V> {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MultivariateVariable {
+    pub index: usize,
+    pub exponent: usize,
+}
+
+impl MultivariateVariable {
+    pub fn new(index: usize, exponent: usize) -> Self {
+        MultivariateVariable { index, exponent }
+    }
+}
+
+pub struct MultivariateTerm<F: FiniteField> {
+    pub variables: Vec<MultivariateVariable>,
+    pub coefficient: F,
+}
+
+impl<F: FiniteField> MultivariateTerm<F> {
+    pub fn new(variables: Vec<MultivariateVariable>, coefficient: F) -> Self {
+        MultivariateTerm { variables, coefficient }
+    }
+}
+
 pub struct MultivariatePolynomial<F: FiniteField> {
     terms: HashMap<BTreeMap<usize, usize>, F>,
 }
@@ -38,7 +61,17 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
         Self { terms: HashMap::new() }
     }
 
-    
+    pub fn from_terms(terms: Vec<MultivariateTerm<F>>) -> Self {
+        let mut poly = MultivariatePolynomial::new();
+        for term in terms {
+            let mut btree_map = BTreeMap::new();
+            for var in term.variables {
+                btree_map.insert(var.index, var.exponent);
+            }
+            poly.insert_term(btree_map, term.coefficient);
+        }
+        poly
+    }
 
     pub fn insert_term(&mut self, exponents: BTreeMap<usize, usize>, coefficient: F) {
         if coefficient != F::ZERO {
