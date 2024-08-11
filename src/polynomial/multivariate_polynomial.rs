@@ -1,9 +1,9 @@
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 use std::ops::{Add, Mul};
+use nalgebra as na;
 
-use itertools::Itertools;
-
+use na::DMatrix;
 use crate::algebra::field::FiniteField;
 use super::*;
 use super::{Monomial, Polynomial};
@@ -52,7 +52,6 @@ pub struct MultivariatePolynomial<F: FiniteField> {
 }
 
 
-
 impl<F: FiniteField + Clone> Clone for MultivariatePolynomial<F> {
     fn clone(&self) -> Self {
         MultivariatePolynomial {
@@ -61,22 +60,9 @@ impl<F: FiniteField + Clone> Clone for MultivariatePolynomial<F> {
     }
 }
 
-
 impl<F: FiniteField> MultivariatePolynomial<F> {
     pub fn new() -> Self {
         Self { terms: HashMap::new() }
-    }
-
-    pub fn from_terms(terms: Vec<MultivariateTerm<F>>) -> Self {
-        let mut poly = MultivariatePolynomial::new();
-        for term in terms {
-            let mut btree_map = BTreeMap::new();
-            for var in term.variables {
-                btree_map.insert(var.index, var.exponent);
-            }
-            poly.insert_term(btree_map, term.coefficient);
-        }
-        poly
     }
 
     pub fn insert_term(&mut self, exponents: BTreeMap<usize, usize>, coefficient: F) {
@@ -141,6 +127,28 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
     }
 }
 
+impl<F: FiniteField> MultivariatePolynomial<F> {
+    pub fn mul_matrix(self, matrix: &DMatrix<F>) -> Vec<MultivariatePolynomial<F>> {
+        let mut result = Vec::new();
+
+        for i in 0..matrix.nrows() {
+            let mut poly = MultivariatePolynomial::new();
+            for j in 0..matrix.ncols() {
+                if let Some(coefficient) = matrix.get((i, j)) {
+                    for (exp, coef) in &self.terms {
+                        let mut new_exp = exp.clone();
+                        new_exp.insert(j, *new_exp.get(&j).unwrap_or(&0) + 1);
+                        poly.insert_term(new_exp, coefficient.clone() * coef.clone());
+                    }
+                }
+            }
+            result.push(poly);
+        }
+
+        result
+    }
+}
+
 impl<F: FiniteField> Add for MultivariatePolynomial<F> {
     type Output = Self;
 
@@ -173,14 +181,7 @@ impl<F: FiniteField> Mul for MultivariatePolynomial<F> {
 impl<F: FiniteField + Display> Display for MultivariatePolynomial<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for (exponents, coeff) in self.terms.iter().sorted_by(|(a_exp, _), (b_exp, _)| {
-            a_exp.iter()
-                .zip(b_exp.iter())
-                .find(|((a_var, a_pow), (b_var, b_pow))| {
-                    a_var.cmp(b_var).then_with(|| b_pow.cmp(a_pow)).is_ne()
-                })
-                .map_or(std::cmp::Ordering::Equal, |(_, _)| std::cmp::Ordering::Less)
-        }) {
+        for (exponents, coeff) in &self.terms {
             if !first {
                 write!(f, " + ")?;
             }
