@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use self::random::Random;
 
 use super::*;
