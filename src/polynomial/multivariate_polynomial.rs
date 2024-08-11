@@ -1,6 +1,7 @@
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 use std::ops::{Add, Mul};
+use itertools::Itertools;
 use nalgebra as na;
 
 use na::DMatrix;
@@ -65,7 +66,19 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
         Self { terms: HashMap::new() }
     }
 
-    pub fn insert_term(&mut self, exponents: BTreeMap<usize, usize>, coefficient: F) {
+    pub fn from_terms(terms: Vec<MultivariateTerm<F>>) -> Self {
+        let mut poly = MultivariatePolynomial::new();
+        for term in terms {
+            let mut btree_map = BTreeMap::new();
+            for var in term.variables {
+                btree_map.insert(var.index, var.exponent);
+            }
+            poly.insert_term(btree_map, term.coefficient);
+        }
+        poly
+    }
+
+    fn insert_term(&mut self, exponents: BTreeMap<usize, usize>, coefficient: F) {
         if coefficient != F::ZERO {
             let entry = self.terms.entry(exponents.clone()).or_insert(F::ZERO);
             *entry += coefficient;
@@ -79,10 +92,13 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
         self.terms.get(exponents)
     }
 
-    pub fn evaluate(&self, points: &BTreeMap<usize, F>) -> F {
+    pub fn evaluate(&self, points: &[(usize, F)]) -> F {
         self.terms.iter().map(|(exponents, coeff)| {
             let term_value = exponents.iter().map(|(&var, &exp)| {
-                points.get(&var).unwrap_or(&F::ONE).pow(exp)
+                points.iter()
+                    .find(|&&(v, _)| v == var)
+                    .map(|&(_, value)| value.pow(exp))
+                    .unwrap_or(F::ONE)
             }).product::<F>();
             *coeff * term_value
         }).sum()
@@ -181,7 +197,14 @@ impl<F: FiniteField> Mul for MultivariatePolynomial<F> {
 impl<F: FiniteField + Display> Display for MultivariatePolynomial<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for (exponents, coeff) in &self.terms {
+        for (exponents, coeff) in self.terms.iter().sorted_by(|(a_exp, _), (b_exp, _)| {
+            a_exp.iter()
+                .zip(b_exp.iter())
+                .find(|((a_var, a_pow), (b_var, b_pow))| {
+                    a_var.cmp(b_var).then_with(|| b_pow.cmp(a_pow)).is_ne()
+                })
+                .map_or(std::cmp::Ordering::Equal, |(_, _)| std::cmp::Ordering::Less)
+        }) {
             if !first {
                 write!(f, " + ")?;
             }

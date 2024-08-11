@@ -1,8 +1,9 @@
-use std::{collections::BTreeMap, hash::Hasher};
+use std::hash::Hasher;
 
 use rand::SeedableRng;
+use crate::random::Random;
 
-use self::{boolean_array::get_all_possible_boolean_values, to_bytes::ToBytes};
+use self::{boolean_array::get_all_possible_boolean_values, random::RandomOracle, to_bytes::ToBytes};
 use super::{multivariate_polynomial::MultivariatePolynomial, *};
 
 pub struct SumcheckProof<F: FiniteField> {
@@ -20,14 +21,6 @@ pub struct SumcheckProof<F: FiniteField> {
 
   // The final evaluation of the original multivariate polynomial
   pub final_evaluation: F,
-}
-
-pub trait Random {
-  fn random<R: Rng + ?Sized>(rng: &mut R) -> Self;
-}
-
-pub trait RandomOracle: Random {
-    fn random_oracle<R: Rng + ?Sized>(rng: &mut R, input: &[u8]) -> Self;
 }
 
 impl<F: FiniteField + Random> RandomOracle for F {
@@ -55,7 +48,7 @@ impl<F: FiniteField + Display> MultivariatePolynomial<F> {
 
     // Use the get_all_possible_boolean_values function to iterate over all boolean assignments
     for boolean_assignment in get_all_possible_boolean_values(num_variables) {
-      let assignment: BTreeMap<_, _> = variables
+      let assignment: Vec<(usize, F)> = variables
         .iter()
         .zip(boolean_assignment.iter())
         .map(|(&var, &b)| (var, if b { F::ONE } else { F::ZERO }))
@@ -72,10 +65,9 @@ impl<F: FiniteField + Display> MultivariatePolynomial<F> {
 
     let sum = get_all_possible_boolean_values(num_variables)
       .map(|bool_values| {
-        let mut assignment = BTreeMap::new();
-        for (i, &b) in bool_values.iter().enumerate() {
-          assignment.insert(variables[i].clone(), if b { F::ONE } else { F::ZERO });
-        }
+        let assignment: Vec<(usize, F)> = variables.iter().enumerate()
+          .map(|(i, &var)| (var, if bool_values[i] { F::ONE } else { F::ZERO }))
+          .collect();
         self.evaluate(&assignment)
       })
       .sum();
@@ -151,8 +143,7 @@ pub fn verify_sumcheck_first_round<F: FiniteField + Random>(
 
     // Step 2: Verify that g(0) + g(1) = claimed_sum
     let var = 0;
-    let sum_at_endpoints = univariate_poly.evaluate(&[(var, F::ZERO)].into_iter().collect())
-        + univariate_poly.evaluate(&[(var, F::ONE)].into_iter().collect());
+    let sum_at_endpoints = univariate_poly.evaluate(&[(var, F::ZERO)]) + univariate_poly.evaluate(&[(var, F::ONE)]);
 
 
     if sum_at_endpoints != claimed_sum {
@@ -181,10 +172,10 @@ pub fn verify_sumcheck_univariate_poly_sum<F: FiniteField + Random>(
 
     // Step 2: Verify that g_i(r_{i-1}) = g_{i-1}(0) + g_{i-1}(1)
     let prev_var = round - 1;
-    let sum_at_endpoints = previous_univariate_poly.evaluate(&[(prev_var, challenge)].into_iter().collect());
+    let sum_at_endpoints = previous_univariate_poly.evaluate(&[(prev_var, challenge)]);
 
-    let eval_at_previous_challenge = current_univariate_poly.evaluate(&[(round, F::ZERO)].into_iter().collect())
-        + current_univariate_poly.evaluate(&[(round, F::ONE)].into_iter().collect());
+    let eval_at_previous_challenge = current_univariate_poly.evaluate(&[(round, F::ZERO)])
+        + current_univariate_poly.evaluate(&[(round, F::ONE)]);
     if eval_at_previous_challenge != sum_at_endpoints {
         return (false, F::ZERO);
     }
@@ -206,9 +197,9 @@ pub fn verify_sumcheck_last_round<F: FiniteField + Random>(
     poly: &MultivariatePolynomial<F>,
 ) -> bool {
     // Step 1: Apply all challenges to the original polynomial
-    let mut challenges_with_indices = BTreeMap::new();
+    let mut challenges_with_indices = Vec::new();
     for (i, challenge) in challenges.iter().enumerate() {
-        challenges_with_indices.insert(i, *challenge);
+        challenges_with_indices.push((i, *challenge));
     }
     let poly_evaluation = poly.evaluate(&challenges_with_indices);
 
@@ -218,7 +209,7 @@ pub fn verify_sumcheck_last_round<F: FiniteField + Random>(
 
     // Step 3: Evaluate the univariate polynomial at the last challenge
     let last_var = challenges.len();
-    let univariate_evaluation = univariate_poly.evaluate(&[(last_var, last_challenge)].into_iter().collect());
+    let univariate_evaluation = univariate_poly.evaluate(&[(last_var, last_challenge)]);
 
     // Step 4: Compare the evaluations
     poly_evaluation == univariate_evaluation
@@ -257,7 +248,7 @@ pub fn non_interactive_sumcheck_prove<F: FiniteField + Random + RandomOracle + D
     let mut rng = rand::thread_rng();
     let challenge: F = F::random_oracle(&mut rng, &claimed_sum.to_bytes());
     challenges.push(challenge);
-    round_evaluations.push(first_univariate_poly.evaluate(&[(0, challenge)].into_iter().collect()));
+    round_evaluations.push(first_univariate_poly.evaluate(&[(0, challenge)]));
 
     let mut previous_univariate_poly = first_univariate_poly;
 
@@ -269,14 +260,14 @@ pub fn non_interactive_sumcheck_prove<F: FiniteField + Random + RandomOracle + D
         // Generate challenge using random oracle
         let challenge: F = F::random_oracle(&mut rng, &previous_univariate_poly.to_bytes());
         challenges.push(challenge);
-        round_evaluations.push(univariate_poly.evaluate(&[(i, challenge)].into_iter().collect()));
+        round_evaluations.push(univariate_poly.evaluate(&[(i, challenge)]));
 
         previous_univariate_poly = univariate_poly;
     }
 
     // Final evaluation
     let final_point = challenges.clone();
-    let final_evaluation = polynomial.evaluate(&final_point.iter().cloned().enumerate().collect());
+    let final_evaluation = polynomial.evaluate(&final_point.iter().cloned().enumerate().collect::<Vec<_>>());
 
     SumcheckProof {
         claimed_sum,
