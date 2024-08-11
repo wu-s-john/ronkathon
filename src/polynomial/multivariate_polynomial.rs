@@ -2,6 +2,8 @@ use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 use std::ops::{Add, Mul};
 
+use itertools::Itertools;
+
 use crate::algebra::field::FiniteField;
 use super::*;
 use super::{Monomial, Polynomial};
@@ -167,7 +169,14 @@ impl<F: FiniteField> Mul for MultivariatePolynomial<F> {
 impl<F: FiniteField + Display> Display for MultivariatePolynomial<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for (exponents, coeff) in &self.terms {
+        for (exponents, coeff) in self.terms.iter().sorted_by(|(a_exp, _), (b_exp, _)| {
+            a_exp.iter()
+                .zip(b_exp.iter())
+                .find(|((a_var, a_pow), (b_var, b_pow))| {
+                    a_var.cmp(b_var).then_with(|| b_pow.cmp(a_pow)).is_ne()
+                })
+                .map_or(std::cmp::Ordering::Equal, |(_, _)| std::cmp::Ordering::Less)
+        }) {
             if !first {
                 write!(f, " + ")?;
             }

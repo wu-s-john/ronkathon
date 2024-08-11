@@ -26,7 +26,7 @@ pub trait Random {
   fn random<R: Rng + ?Sized>(rng: &mut R) -> Self;
 }
 
-impl<F: FiniteField> MultivariatePolynomial<F> {
+impl<F: FiniteField + Display> MultivariatePolynomial<F> {
   pub fn generate_sumcheck_claim(&self) -> F {
     // Compute and return the sum of the polynomial over all boolean inputs
     let variables = self.variables();
@@ -50,11 +50,11 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
     let variables = self.variables();
     let num_variables = variables.len();
 
-    let sum = get_all_possible_boolean_values(num_variables - 1)
+    let sum = get_all_possible_boolean_values(num_variables)
       .map(|bool_values| {
         let mut assignment = BTreeMap::new();
         for (i, &b) in bool_values.iter().enumerate() {
-          assignment.insert(variables[i + 1].clone(), if b { F::ONE } else { F::ZERO });
+          assignment.insert(variables[i].clone(), if b { F::ONE } else { F::ZERO });
         }
         self.evaluate(&assignment)
       })
@@ -69,7 +69,7 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
   pub fn prove_sumcheck_round_i(
     &self,
     i: usize,
-    partial_assignment: Vec<F>,
+    partial_assignment: Vec<F>, 
   ) -> MultivariatePolynomial<F> {
     return self.compute_univariate_polynomial(i, partial_assignment);
   }
@@ -100,9 +100,11 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
       .map(|bool_values| {
         let further_assignments: Vec<F> =
           bool_values.iter().map(|&b| if b { F::ONE } else { F::ZERO }).collect();
-        partial_poly.clone().apply_variables(
-          &(0..num_variables).skip(round).zip(further_assignments).collect::<Vec<_>>(),
-        )
+        let further_variables = ((round + 1)..num_variables).zip(further_assignments).collect::<Vec<_>>();
+        let poly = partial_poly.clone().apply_variables(
+          &further_variables,
+        );
+        poly
       })
       .fold(MultivariatePolynomial::new(), |acc, poly| acc + poly);
 
@@ -129,9 +131,10 @@ pub fn verify_sumcheck_first_round<F: FiniteField + Random>(
     }
 
     // Step 2: Verify that g(0) + g(1) = claimed_sum
-    let var = univariate_poly.variables()[0];
+    let var = 0;
     let sum_at_endpoints = univariate_poly.evaluate(&[(var, F::ZERO)].into_iter().collect())
         + univariate_poly.evaluate(&[(var, F::ONE)].into_iter().collect());
+
 
     if sum_at_endpoints != claimed_sum {
         return (false, F::ZERO);
@@ -217,7 +220,7 @@ pub fn verify_sumcheck_last_round<F: FiniteField + Random>(
     (true, eval_at_new_challenge)
 }
 
-pub fn simulate_sumcheck_protocol<F: FiniteField + Random>(
+pub fn simulate_sumcheck_protocol<F: FiniteField + Random + Display>(
     polynomial: &MultivariatePolynomial<F>
 ) -> bool {
     let num_variables = polynomial.variables().len();
