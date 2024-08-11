@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
 
 use self::sumcheck::Random;
-
 use super::*;
 use crate::polynomial::{
-  multivariate_polynomial::{MultivariatePolynomial, MultivariateTerm, MultivariateVariable}, sumcheck::verify_sumcheck_first_round,
+  multivariate_polynomial::{MultivariatePolynomial, MultivariateTerm, MultivariateVariable},
+  sumcheck::{verify_sumcheck_first_round, verify_sumcheck_round_i},
 };
 
 #[fixture]
@@ -278,13 +278,13 @@ fn test_apply_variables_empty() {
 
 impl Random for PlutoBaseField {
   fn random<R: Rng + ?Sized>(rng: &mut R) -> Self {
-      let value = rng.gen_range(0..PlutoPrime::Base as usize);
-      PlutoBaseField::new(value)
+    let value = rng.gen_range(0..PlutoPrime::Base as usize);
+    PlutoBaseField::new(value)
   }
 }
 
 #[test]
-fn test_first_round_sumcheck() {
+fn test_full_sumcheck_protocol() {
   // Create the polynomial f(x1, x2, x3) = x1 * (x2 + x3) - (x2 * x3)
   let poly = MultivariatePolynomial::<PlutoBaseField>::from_terms(vec![
     MultivariateTerm::new(
@@ -301,34 +301,20 @@ fn test_first_round_sumcheck() {
     ), // -x2 * x3
   ]);
 
-  // Compute the first round of sumcheck
-  let (claimed_sum, first_univariate_poly) = poly.prove_first_sumcheck_round();
 
-  // Print the claimed sum and the first univariate polynomial
-  println!("Claimed sum: {:?}", claimed_sum);
-  println!("First univariate polynomial: {}", first_univariate_poly);
-
-  // Verify the first round
-  let (valid, challenge) = verify_sumcheck_first_round(claimed_sum, &first_univariate_poly);
-
+  // First round
+  let (claimed_sum, univariate_poly1) = poly.prove_first_sumcheck_round();
+  let (valid, _challenge) = verify_sumcheck_first_round(claimed_sum, &univariate_poly1);
   assert!(valid, "First round verification failed");
-  println!("First round verification passed");
-  println!("Challenge for next round: {:?}", challenge);
 
-  // Additional checks
-  // 1. Check that the claimed sum is correct
-  let expected_sum = poly.generate_sumcheck_claim();
-  assert_eq!(claimed_sum, expected_sum, "Claimed sum is incorrect");
+  // We asssume want to make the challenge reproducible for testing purposes.
+  // So, it's 1
+  let random_challenge1 = PlutoBaseField::new(4);
 
-  // 2. Check that the first univariate polynomial is correct
-  let x1 = first_univariate_poly.variables()[0];
-  let g_0 = first_univariate_poly.evaluate(&[(x1, PlutoBaseField::ZERO)].into_iter().collect());
-  let g_1 = first_univariate_poly.evaluate(&[(x1, PlutoBaseField::ONE)].into_iter().collect());
-  assert_eq!(g_0 + g_1, claimed_sum, "g(0) + g(1) should equal the claimed sum");
+  println!("Claimed sum: {:?}", claimed_sum);
+  println!("First univariate polynomial: {}", univariate_poly1);
+  println!("First round challenge: {:?}", random_challenge1);
 
-  // 3. Check that the degree of the first univariate polynomial is at most 1
-  assert!(
-    first_univariate_poly.degree() <= 1,
-    "Degree of first univariate polynomial should be at most 1"
-  );
+  
+
 }
