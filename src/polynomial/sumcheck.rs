@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, hash::Hasher};
 
-use rand::thread_rng;
+use rand::SeedableRng;
 
-use self::boolean_array::get_all_possible_boolean_values;
+use self::{boolean_array::get_all_possible_boolean_values, to_bytes::ToBytes};
 use super::{multivariate_polynomial::MultivariatePolynomial, *};
 
 pub struct SumcheckProof<F: FiniteField> {
@@ -24,6 +24,26 @@ pub struct SumcheckProof<F: FiniteField> {
 
 pub trait Random {
   fn random<R: Rng + ?Sized>(rng: &mut R) -> Self;
+}
+
+pub trait RandomOracle: Random {
+    fn random_oracle<R: Rng + ?Sized>(rng: &mut R, input: &[u8]) -> Self;
+}
+
+impl<F: FiniteField + Random> RandomOracle for F {
+    fn random_oracle<R: Rng + ?Sized>(rng: &mut R, input: &[u8]) -> Self {
+        // This is a simplified example. In a real implementation,
+        // you'd want to use a cryptographic hash function here.
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        input.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Use the hash to seed a new RNG
+        let mut seeded_rng = rand::rngs::StdRng::seed_from_u64(hash);
+
+        // Generate a random field element using the seeded RNG
+        Self::random(&mut seeded_rng)
+    }
 }
 
 impl<F: FiniteField + Display> MultivariatePolynomial<F> {
@@ -109,10 +129,9 @@ impl<F: FiniteField + Display> MultivariatePolynomial<F> {
       .fold(MultivariatePolynomial::new(), |acc, poly| acc + poly);
 
     // Assert that the resulting polynomial has only one variable
-    assert_eq!(
-      result_polynomial.variables().len(),
-      1,
-      "The univariate polynomial should have only one variable"
+    assert!(
+      result_polynomial.variables().len() <= 1,
+      "The univariate polynomial should have at most one variable"
     );
 
     result_polynomial
@@ -144,32 +163,28 @@ pub fn verify_sumcheck_first_round<F: FiniteField + Random>(
     let mut rng = rand::thread_rng();
     let challenge: F = F::random(&mut rng);
 
-    // Step 4: Evaluate the polynomial at the challenge point
-    let eval_at_challenge = univariate_poly.evaluate(&[(var, challenge)].into_iter().collect());
-
     // Return true (verification passed) and the evaluation at the challenge point
-    (true, eval_at_challenge)
+    (true, challenge)
 }
 
 // Verify the i-th round of the sumcheck protocol
-pub fn verify_sumcheck_round_i<F: FiniteField + Random>(
+pub fn verify_sumcheck_univariate_poly_sum<F: FiniteField + Random>(
     round: usize,
-    previous_random_value: F,
+    challenge: F,
     previous_univariate_poly: &MultivariatePolynomial<F>,
     current_univariate_poly: &MultivariatePolynomial<F>,
 ) -> (bool, F) {
     // Step 1: Verify that the current polynomial is univariate
-    if current_univariate_poly.variables().len() != 1 {
+    if current_univariate_poly.variables().len() > 1 {
         return (false, F::ZERO);
     }
 
     // Step 2: Verify that g_i(r_{i-1}) = g_{i-1}(0) + g_{i-1}(1)
     let prev_var = round - 1;
-    let sum_at_endpoints = previous_univariate_poly.evaluate(&[(prev_var, F::ZERO)].into_iter().collect())
-        + previous_univariate_poly.evaluate(&[(prev_var, F::ONE)].into_iter().collect());
+    let sum_at_endpoints = previous_univariate_poly.evaluate(&[(prev_var, challenge)].into_iter().collect());
 
-    let eval_at_previous_challenge = current_univariate_poly.evaluate(&[(prev_var, previous_random_value)].into_iter().collect());
-
+    let eval_at_previous_challenge = current_univariate_poly.evaluate(&[(round, F::ZERO)].into_iter().collect())
+        + current_univariate_poly.evaluate(&[(round, F::ONE)].into_iter().collect());
     if eval_at_previous_challenge != sum_at_endpoints {
         return (false, F::ZERO);
     }
@@ -178,98 +193,142 @@ pub fn verify_sumcheck_round_i<F: FiniteField + Random>(
     let mut rng = rand::thread_rng();
     let new_challenge: F = F::random(&mut rng);
 
-    // Step 4: Evaluate the current polynomial at the new challenge point
-    let eval_at_new_challenge = current_univariate_poly.evaluate(&[(round, new_challenge)].into_iter().collect());
-
     // Return true (verification passed) and the evaluation at the new challenge point
-    (true, eval_at_new_challenge)
+    (true, new_challenge)
 }
 
-// You first verify the last rounds by ensuring that the last values fulfill the equality of g_{v−1}(r_{v−1}) = gv(0) +gv(1).
+// You would just need to verify that the last unit polynomial applied that you created with the last challenge is equal to applying 
+// all the challenges applied
 // Then, it randomly gets a random value. Then plugs it into the current univariate polynomial
 pub fn verify_sumcheck_last_round<F: FiniteField + Random>(
-    round: usize,
-    previous_random_value: F,
-    previous_univariate_poly: &MultivariatePolynomial<F>,
-    current_univariate_poly: &MultivariatePolynomial<F>,
-) -> (bool, F) {
-    // Step 1: Verify that the current polynomial is univariate
-    if current_univariate_poly.variables().len() != 1 {
-        return (false, F::ZERO);
+    challenges: Vec<F>,
+    univariate_poly: &MultivariatePolynomial<F>,
+    poly: &MultivariatePolynomial<F>,
+) -> bool {
+    // Step 1: Apply all challenges to the original polynomial
+    let mut challenges_with_indices = BTreeMap::new();
+    for (i, challenge) in challenges.iter().enumerate() {
+        challenges_with_indices.insert(i, *challenge);
     }
+    let poly_evaluation = poly.evaluate(&challenges_with_indices);
 
-    // Step 2: Verify that g_{v-1}(r_{v-1}) = g_v(0) + g_v(1)
-    let prev_var = round - 1;
-    let sum_at_endpoints = current_univariate_poly.evaluate(&[(prev_var, F::ZERO)].into_iter().collect())
-        + current_univariate_poly.evaluate(&[(prev_var, F::ONE)].into_iter().collect());
+    // Step 2: Generate a random challenge for the last variable
+    let mut rng = rand::thread_rng();
+    let last_challenge: F = F::random(&mut rng);
 
-    let eval_at_previous_challenge = previous_univariate_poly.evaluate(&[(prev_var, previous_random_value)].into_iter().collect());
+    // Step 3: Evaluate the univariate polynomial at the last challenge
+    let last_var = challenges.len();
+    let univariate_evaluation = univariate_poly.evaluate(&[(last_var, last_challenge)].into_iter().collect());
 
-    if eval_at_previous_challenge != sum_at_endpoints {
-        return (false, F::ZERO);
-    }
-
-    // Step 3: Generate a new random challenge
-    let mut rng = thread_rng();
-    let new_challenge: F = F::random(&mut rng);
-
-    // Step 4: Evaluate the current polynomial at the new challenge point
-    let eval_at_new_challenge = current_univariate_poly.evaluate(&[(round, new_challenge)].into_iter().collect());
-
-    // Return true (verification passed) and the evaluation at the new challenge point
-    (true, eval_at_new_challenge)
+    // Step 4: Compare the evaluations
+    poly_evaluation == univariate_evaluation
 }
 
-pub fn simulate_sumcheck_protocol<F: FiniteField + Random + Display>(
+impl<F: FiniteField + Display> ToBytes for F {
+    fn to_bytes(&self) -> Vec<u8> {
+        // Implement this based on how your field elements are represented
+        // This is just an example:
+        self.to_string().into_bytes()
+    }
+}
+
+impl<F: FiniteField + Display> ToBytes for MultivariatePolynomial<F> {
+    fn to_bytes(&self) -> Vec<u8> {
+        // Implement this based on how your polynomials are represented
+        // This is just an example:
+        self.to_string().into_bytes()
+    }
+}
+
+
+pub fn non_interactive_sumcheck_prove<F: FiniteField + Random + RandomOracle + Display + ToBytes>(
     polynomial: &MultivariatePolynomial<F>
-) -> bool {
+) -> SumcheckProof<F> {
     let num_variables = polynomial.variables().len();
     let mut challenges = Vec::new();
+    let mut round_polynomials = Vec::new();
+    let mut round_evaluations = Vec::new();
 
     // First round
     let (claimed_sum, first_univariate_poly) = polynomial.prove_first_sumcheck_round();
-    let (valid, challenge) = verify_sumcheck_first_round(claimed_sum, &first_univariate_poly);
-    if !valid {
-        return false;
-    }
+    round_polynomials.push(first_univariate_poly.clone());
+
+    // Generate challenge using random oracle
+    let mut rng = rand::thread_rng();
+    let challenge: F = F::random_oracle(&mut rng, &claimed_sum.to_bytes());
     challenges.push(challenge);
+    round_evaluations.push(first_univariate_poly.evaluate(&[(0, challenge)].into_iter().collect()));
 
     let mut previous_univariate_poly = first_univariate_poly;
 
     // Intermediate rounds
-    for i in 1..num_variables - 1 {
+    for i in 1..num_variables {
         let univariate_poly = polynomial.prove_sumcheck_round_i(i, challenges.clone());
-        let (valid, challenge) = verify_sumcheck_round_i(
+        round_polynomials.push(univariate_poly.clone());
+
+        // Generate challenge using random oracle
+        let challenge: F = F::random_oracle(&mut rng, &previous_univariate_poly.to_bytes());
+        challenges.push(challenge);
+        round_evaluations.push(univariate_poly.evaluate(&[(i, challenge)].into_iter().collect()));
+
+        previous_univariate_poly = univariate_poly;
+    }
+
+    // Final evaluation
+    let final_point = challenges.clone();
+    let final_evaluation = polynomial.evaluate(&final_point.iter().cloned().enumerate().collect());
+
+    SumcheckProof {
+        claimed_sum,
+        round_polynomials,
+        round_evaluations,
+        final_point,
+        final_evaluation,
+    }
+}
+
+pub fn non_interactive_sumcheck_verify<F: FiniteField + Random + RandomOracle + Display>(
+    proof: &SumcheckProof<F>,
+    polynomial: &MultivariatePolynomial<F>
+) -> bool {
+    let num_variables = polynomial.variables().len();
+
+    // Verify first round
+    let (valid, challenge) = verify_sumcheck_first_round(proof.claimed_sum, &proof.round_polynomials[0]);
+    if !valid {
+        return false;
+    }
+
+    // Verify that the challenge matches what the prover used
+    let mut rng = rand::thread_rng();
+    let expected_challenge: F = F::random_oracle(&mut rng, &proof.claimed_sum.to_bytes());
+    if challenge != expected_challenge {
+        return false;
+    }
+
+    // Verify intermediate rounds
+    for i in 1..num_variables {
+        let (valid, challenge) = verify_sumcheck_univariate_poly_sum(
             i,
-            *challenges.last().unwrap(),
-            &previous_univariate_poly,
-            &univariate_poly,
+            proof.final_point[i-1],
+            &proof.round_polynomials[i-1],
+            &proof.round_polynomials[i],
         );
         if !valid {
             return false;
         }
-        challenges.push(challenge);
-        previous_univariate_poly = univariate_poly;
+
+        // Verify that the challenge matches what the prover used
+        let expected_challenge: F = F::random_oracle(&mut rng, &proof.round_polynomials[i-1].to_bytes());
+        if challenge != expected_challenge {
+            return false;
+        }
     }
 
-    // Last round
-    let last_univariate_poly = polynomial.prove_sumcheck_last_round(num_variables - 1, challenges.clone());
-    let (valid, final_challenge) = verify_sumcheck_last_round(
-        num_variables - 1,
-        *challenges.last().unwrap(),
-        &previous_univariate_poly,
-        &last_univariate_poly,
-    );
-    if !valid {
-        return false;
-    }
-    challenges.push(final_challenge);
-
-    // Final check
-    
-    let challenges_with_indices: BTreeMap<usize, F> = challenges.iter().cloned().enumerate().collect();
-    let final_evaluation = polynomial.evaluate(&challenges_with_indices);
-    let expected_evaluation = last_univariate_poly.evaluate(&[(num_variables - 1, final_challenge)].into_iter().collect());
-
-    final_evaluation == expected_evaluation
+    // Verify last round
+    verify_sumcheck_last_round(
+        proof.final_point.clone(),
+        &proof.round_polynomials.last().unwrap(),
+        polynomial,
+    )
 }

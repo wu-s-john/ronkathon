@@ -34,6 +34,7 @@ impl MultivariateVariable {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub struct MultivariateTerm<F: FiniteField> {
     pub variables: Vec<MultivariateVariable>,
     pub coefficient: F,
@@ -45,9 +46,12 @@ impl<F: FiniteField> MultivariateTerm<F> {
     }
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct MultivariatePolynomial<F: FiniteField> {
     terms: HashMap<BTreeMap<usize, usize>, F>,
 }
+
+
 
 impl<F: FiniteField + Clone> Clone for MultivariatePolynomial<F> {
     fn clone(&self) -> Self {

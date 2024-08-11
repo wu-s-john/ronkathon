@@ -4,7 +4,7 @@ use self::sumcheck::Random;
 use super::*;
 use crate::polynomial::{
   multivariate_polynomial::{MultivariatePolynomial, MultivariateTerm, MultivariateVariable},
-  sumcheck::{verify_sumcheck_first_round, verify_sumcheck_round_i},
+  sumcheck::{verify_sumcheck_first_round, verify_sumcheck_last_round, verify_sumcheck_univariate_poly_sum},
 };
 
 #[fixture]
@@ -315,6 +315,62 @@ fn test_full_sumcheck_protocol() {
   println!("First univariate polynomial: {}", univariate_poly1);
   println!("First round challenge: {:?}", random_challenge1);
 
-  
+  // Second challenge
+  // It reduces the polynomial to another value
 
+  // With the random challenge of x1=4, the prover needs to create a univariate polynomial of \sum_{x3} P(4, x2, x3)
+  //
+  let univariate_poly2 = poly.prove_sumcheck_round_i(1, vec![random_challenge1]);
+  println!("Round 2 univariate polynomial: {}", univariate_poly2);
+
+  // Assert that univariate_poly2 is equal to 7*x1 + 4
+  let expected_poly = MultivariatePolynomial::<PlutoBaseField>::from_terms(vec![
+    MultivariateTerm::new(
+      vec![MultivariateVariable::new(1, 1)],
+      PlutoBaseField::new(7),
+    ),
+    MultivariateTerm::new(
+      vec![],
+      PlutoBaseField::new(4),
+    ),
+  ]);
+  assert_eq!(univariate_poly2, expected_poly, "Round two polynomials don't equal each other");
+
+  let (valid, _challenge) = verify_sumcheck_univariate_poly_sum(
+    1,
+    random_challenge1,
+    &univariate_poly1,
+    &univariate_poly2,
+  );
+  assert!(valid, "Second verification failed");
+
+  // We select a new random challenge, which will be 4
+  let random_challenge2 = PlutoBaseField::new(4);
+
+  // Third and final round
+  let univariate_poly3 = poly.prove_sumcheck_last_round(2, vec![random_challenge1, random_challenge2]);
+  println!("Round 3 univariate polynomial: {}", univariate_poly3);
+
+  // Assert that univariate_poly3 is equal to f(x_2) = 16
+  let expected_poly3 = MultivariatePolynomial::<PlutoBaseField>::from_terms(vec![
+    MultivariateTerm::new(
+      vec![],
+      PlutoBaseField::new(16),
+    )
+  ]);
+
+  assert_eq!(univariate_poly3, expected_poly3, "Round three polynomials don't equal each other");
+
+  let (valid, _final_challenge) = verify_sumcheck_univariate_poly_sum(
+    2,
+    random_challenge2,
+    &univariate_poly2,
+    &univariate_poly3,
+  );
+  assert!(valid, "Failed the final univariate poly sum");
+
+  let random_challenge3 = PlutoBaseField::new(4);
+
+  let valid = verify_sumcheck_last_round(vec![random_challenge1, random_challenge2, random_challenge3], &univariate_poly3, &poly);
+  assert!(valid, "Final verification failed");
 }
