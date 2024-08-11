@@ -9,19 +9,7 @@ use crate::algebra::field::FiniteField;
 use super::*;
 use super::{Monomial, Polynomial};
 
-use std::hash::Hasher;
-
-#[derive(PartialEq, Eq)]
-struct SortedBTreeMap<K: Ord, V>(BTreeMap<K, V>);
-
-impl<K: Ord + Hash, V: Hash> Hash for SortedBTreeMap<K, V> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        for (k, v) in self.0.iter() {
-            k.hash(state);
-            v.hash(state);
-        }
-    }
-}
+use std::ops::Sub;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MultivariateVariable {
@@ -144,11 +132,11 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
 }
 
 impl<F: FiniteField> MultivariatePolynomial<F> {
-    pub fn mul_matrix(self, matrix: &DMatrix<F>) -> Vec<MultivariatePolynomial<F>> {
-        let mut result = Vec::new();
+    pub fn mul_matrix(self, matrix: &DMatrix<F>) -> MultivariatePolynomial<F> {
 
+        let mut poly = MultivariatePolynomial::new();
         for i in 0..matrix.nrows() {
-            let mut poly = MultivariatePolynomial::new();
+            
             for j in 0..matrix.ncols() {
                 if let Some(coefficient) = matrix.get((i, j)) {
                     for (exp, coef) in &self.terms {
@@ -158,10 +146,9 @@ impl<F: FiniteField> MultivariatePolynomial<F> {
                     }
                 }
             }
-            result.push(poly);
         }
 
-        result
+        return poly;
     }
 }
 
@@ -171,6 +158,18 @@ impl<F: FiniteField> Add for MultivariatePolynomial<F> {
     fn add(mut self, rhs: Self) -> Self::Output {
         for (exponents, coeff) in rhs.terms {
             self.insert_term(exponents, coeff);
+        }
+        self
+    }
+}
+
+impl<F: FiniteField> Sub for MultivariatePolynomial<F> {
+    type Output = Self;
+
+    fn sub(mut self, rhs: Self) -> Self::Output {
+        for (exponents, coeff) in rhs.terms {
+            // Negate the coefficient and insert
+            self.insert_term(exponents, -coeff);
         }
         self
     }
